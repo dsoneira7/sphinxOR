@@ -36,6 +36,9 @@ from builtins import bytes
 
 from nacl.bindings import crypto_scalarmult_base, crypto_scalarmult
 
+def _expand32(K):
+    return (K+b"\x00"*32)[:32]
+
 class Group_C25519:
     "Group operations using Curve 25519"
 
@@ -47,13 +50,14 @@ class Group_C25519:
 
     def expon(self, base, exp):        
         for f in exp:
-            base = crypto_scalarmult(f, base)
+            base = crypto_scalarmult(_expand32(f), base)
         return base
 
     def expon_base(self, exp):
-        base = crypto_scalarmult_base(exp[0])        
+        assert len(exp) > 0
+        base = crypto_scalarmult_base(_expand32(exp[0]))   
         for f in exp[1:]:
-            base = crypto_scalarmult(f, base)
+            base = crypto_scalarmult(_expand32(f), base)
         return base
 
 
@@ -66,3 +70,13 @@ class Group_C25519:
 
     def printable(self, alpha):
         return alpha
+
+def test_commut():
+    G = Group_C25519()
+    x0, x1, x2 = [G.gensecret() for _ in range(3) ]
+    x2 = x2[:16]
+
+    assert G.expon_base([x0, x1, x2]) == G.expon_base([x2, x1, x0])
+
+    assert G.expon_base([x0, x1, x2]) == G.expon( G.expon_base([x0, x1]), [ x2 ])
+    assert G.expon_base([x0, x2]) == G.expon( G.expon_base([x0]), [ x2 ])

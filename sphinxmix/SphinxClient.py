@@ -132,15 +132,16 @@ def create_header(params, nodelist, keys, dest, assoc=None):
     blind_factors = [ x ]
     asbtuples = []
     
+    from binascii import hexlify
+
     for k in keys:
         alpha = group.expon_base(blind_factors)
+        
         s = group.expon(k, blind_factors)
         aes_s = p.get_aes_key(s)
-        assert type(aes_s) == bytes
 
         b = p.hb(aes_s)
-        # blind_factor = blind_factor.mod_mul(b, p.group.G.order())
-        blind_factors += [ b ] 
+        blind_factors += [ b ]
 
         hr = header_record(alpha, s, b, aes_s)
         asbtuples.append(hr)
@@ -178,7 +179,7 @@ def create_header(params, nodelist, keys, dest, assoc=None):
 
     # Compute the MAC over the associated data and beta
     gamma = p.mu(p.hmu(asbtuples[nu-1].aes), assoc[nu-1] + beta)
-    
+
     for i in range(nu-2, -1, -1):
         node_id = node_meta[i+1]
 
@@ -187,7 +188,7 @@ def create_header(params, nodelist, keys, dest, assoc=None):
         plain = node_id + gamma + beta[:plain_beta_len]
         
         beta = p.xor_rho(p.hrho(asbtuples[i].aes), plain)        
-        gamma = p.mu(p.hmu(asbtuples[i].aes), assoc[i] + beta)
+        gamma = p.mu(p.hmu(asbtuples[i].aes), assoc[i] + beta)        
         
     return (asbtuples[0].alpha, beta, gamma), \
         [x.aes for x in asbtuples]
@@ -347,6 +348,7 @@ def test_timing(rep=100, payload_size=1024 * 10):
 def test_minimal():
     from .SphinxParams import SphinxParams
     r = 5
+
     params = SphinxParams()
 
     # The minimal PKI involves names of nodes and keys
@@ -532,6 +534,75 @@ def test_c25519(rep=100, payload_size=1024 * 10):
 
     return T_package, T_process
 
+def test_c25519_hemi(rep=1, payload_size=1024):
+    r = 5
+    from .SphinxParamsC25519 import Group_C25519
+    
+    group = Group_C25519()
+    params = SphinxParams(group=group, body_len=payload_size, assoc_len=4)
+
+    # Monkey patch to use AES-CTR
+    params.lioness_enc = params.xor_rho
+    params.lioness_dec = params.xor_rho
+
+
+    pki = {}
+    
+    pkiPriv = {}
+    pkiPub = {}
+
+    for i in range(10):
+        nid = pack("b", i) # Nenc(params, bytes([i]))
+        x = params.group.gensecret()
+        y = crypto_scalarmult_base(x)
+        pkiPriv[nid] = pki_entry(nid, x, y)
+        pkiPub[nid] = pki_entry(nid, None, y)
+
+
+    # The simplest path selection algorithm and message packaging
+    use_nodes = rand_subset(pkiPub.keys(), r)
+    nodes_routing = list(map(Nenc, use_nodes))
+    node_keys = [pkiPub[n].y for n in use_nodes]
+    
+    assoc = [b"XXXX"] * len(nodes_routing)
+    
+    header, delta = create_forward_message(params, nodes_routing, node_keys, b"dest", b"this is a test", assoc)
+    
+
+    from .SphinxNode import sphinx_process
+    from binascii import hexlify
+
+    x = pkiPriv[use_nodes[0]].x
+    i = 0
+    while True:
+        assert pkiPriv[use_nodes[i]].x == x
+        assert pkiPriv[use_nodes[i]].y == node_keys[i]
+
+        alpha, beta, gamma = header
+
+        (_, B, (header, delta), mac_key) = sphinx_process(params, x, header, delta, b"XXXX")
+
+        routing = PFdecode(params, B)
+        assert i == 4 or B == nodes_routing[i+1]
+        
+        i += 1
+
+        if routing[0] == Relay_flag:
+            addr = routing[1]
+            assert addr == use_nodes[i]
+            x = pkiPriv[addr].x
+        elif routing[0] == Dest_flag:
+            assert len(routing) == 1
+            dec_dest, dec_msg = receive_forward(params, mac_key, delta)
+            assert dec_dest == b"dest"
+            assert dec_msg == b"this is a test"
+
+            break
+        else:
+            print("Error")
+            assert False
+            break
+        
 
 
 

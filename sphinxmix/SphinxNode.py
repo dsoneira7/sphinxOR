@@ -48,7 +48,9 @@ def sphinx_process(params, secret, header, delta, assoc=b''):
     aes_s = p.get_aes_key(s)
     
     assert len(beta) == p.max_len - 32
-    if gamma != p.mu(p.hmu(aes_s), assoc + beta):
+
+    newgamma = p.mu(p.hmu(aes_s), assoc + beta)
+    if gamma != newgamma:
         raise SphinxException("MAC mismatch.")
 
     beta_pad = beta + (b"\x00" * (2 * p.max_len)) 
@@ -60,7 +62,10 @@ def sphinx_process(params, secret, header, delta, assoc=b''):
 
     tag = p.htau(aes_s)
     b = p.hb(aes_s)
-    alpha = group.expon(alpha, [ b ])
+
+    alpha_new = group.expon(alpha, [ b ])
+    alpha = alpha_new
+
     gamma = rest[:p.k]
     beta = rest[p.k:p.k+(p.max_len - 32)]
     delta = p.pii(p.hpi(aes_s), delta)
