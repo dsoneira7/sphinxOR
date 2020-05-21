@@ -1,4 +1,4 @@
-testThe Sphinxmix python package
+The Sphinxmix python package
 ============================
 [![PyPI](https://img.shields.io/pypi/v/sphinxmix.svg)]()
 [![Documentation Status](https://readthedocs.org/projects/sphinxmix/badge/?version=latest)](http://sphinxmix.readthedocs.io/en/latest/?badge=latest)
